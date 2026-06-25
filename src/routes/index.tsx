@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -18,7 +19,7 @@ export const Route = createFileRoute("/")({
 type Severity = "safe" | "warn" | "critical";
 type District = { code: string; name: string; severity: Severity; load: number };
 type WeatherItem = { name: string; condition: string; temp: number; severity: Severity };
-type Report = { district: string; time: string; message: string; severity: Severity };
+type Report = { id: string; district: string; created_at: string; message: string; severity: Severity };
 
 const DISTRICTS: District[] = [
   { code: "KL-01", name: "Trivandrum", severity: "safe", load: 0.75 },
