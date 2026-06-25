@@ -212,7 +212,11 @@ function Home() {
 
             {/* Actions */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <button className="flex flex-col items-start p-6 bg-surface border border-warn/30 hover:border-warn transition-all text-left group">
+              <button
+                type="button"
+                onClick={() => setReportOpen(true)}
+                className="flex flex-col items-start p-6 bg-surface border border-warn/30 hover:border-warn transition-all text-left group"
+              >
                 <div className="w-10 h-10 rounded-full bg-warn/20 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
                   <div className="w-4 h-4 bg-warn rotate-45" />
                 </div>
@@ -223,6 +227,7 @@ function Home() {
                   Floods, landslides, road damage, power failures, or risks.
                 </span>
               </button>
+
 
               <button className="flex flex-col items-start p-6 bg-surface border border-primary/30 hover:border-primary transition-all text-left group">
                 <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
