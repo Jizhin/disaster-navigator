@@ -83,6 +83,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:description", content: "Real-time community reporting platform for floods, landslides, road damage, power failures and public safety incidents across Kerala." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
+      { name: "twitter:title", content: "Anything Happened? — Kerala Community Disaster Watch" },
+      { name: "twitter:description", content: "Real-time community reporting platform for floods, landslides, road damage, power failures and public safety incidents across Kerala." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/33636137-88af-46f4-af58-ab7cb4ea42f4/id-preview-652b36f9--80a76236-d3c2-4b81-939c-02c4fadad985.lovable.app-1782372886390.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/33636137-88af-46f4-af58-ab7cb4ea42f4/id-preview-652b36f9--80a76236-d3c2-4b81-939c-02c4fadad985.lovable.app-1782372886390.png" },
     ],
     links: [
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
