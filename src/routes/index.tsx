@@ -1031,10 +1031,12 @@ function ReportAlertModal({
 function DistrictModal({
   district,
   reports,
+  alerts,
   onClose,
 }: {
   district: string;
   reports: Report[];
+  alerts: OfficialAlert[];
   onClose: () => void;
 }) {
   const places = useMemo(() => {
@@ -1043,82 +1045,195 @@ function DistrictModal({
     return Array.from(set);
   }, [reports]);
   const [activePlace, setActivePlace] = useState<string | null>(null);
-  const visible = activePlace ? reports.filter((r) => r.place === activePlace) : reports;
+  const visibleReports = activePlace
+    ? reports.filter((r) => r.place === activePlace)
+    : reports;
+
+  const sev = maxSeverity([
+    ...reports.map((r) => ({ severity: r.severity })),
+    ...alerts.map((a) => ({ severity: a.severity })),
+  ]);
+  const headline =
+    alerts.find((a) => a.severity === "critical")?.disasterType ??
+    alerts[0]?.disasterType ??
+    (reports.length > 0 ? "Crowd reports active" : "No active incidents");
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm p-4"
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-3xl bg-surface border border-primary/30 max-h-[90vh] flex flex-col"
+        className="w-full max-w-5xl bg-background border border-surface max-h-[92vh] flex flex-col overflow-hidden"
       >
-        <div className="p-5 border-b border-background/40 flex items-start justify-between gap-4">
-          <div>
-            <div className="font-display text-[10px] uppercase tracking-widest text-primary font-bold mb-1">
-              District Inspect
+        {/* Newsroom Dossier Masthead */}
+        <header className={`relative border-b-4 ${severityBorder(sev)} bg-surface p-6`}>
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <div className="font-display text-[10px] uppercase tracking-[0.3em] text-muted-foreground font-bold">
+              Dossier · Kerala Disaster Watch
             </div>
-            <h2 className="font-display text-xl font-bold uppercase tracking-tight">
-              {district}
-            </h2>
-            <div className="font-display text-[10px] uppercase tracking-widest text-muted-foreground mt-1">
-              {reports.length} live report{reports.length === 1 ? "" : "s"}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="font-display text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground"
-          >
-            Close ✕
-          </button>
-        </div>
-
-        {places.length > 0 && (
-          <div className="flex gap-2 overflow-x-auto px-5 py-3 border-b border-background/40">
             <button
               type="button"
-              onClick={() => setActivePlace(null)}
-              className={`shrink-0 font-display text-[10px] uppercase tracking-widest font-bold px-3 py-1.5 border transition-colors ${
-                activePlace === null
-                  ? "border-primary bg-primary/20 text-primary"
-                  : "border-surface text-muted-foreground hover:border-foreground/40"
-              }`}
+              onClick={onClose}
+              className="font-display text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground"
             >
-              All places
+              Close ✕
             </button>
-            {places.map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => setActivePlace(p)}
-                className={`shrink-0 font-display text-[10px] uppercase tracking-widest font-bold px-3 py-1.5 border transition-colors ${
-                  activePlace === p
-                    ? "border-primary bg-primary/20 text-primary"
-                    : "border-surface text-muted-foreground hover:border-foreground/40"
-                }`}
-              >
-                {p}
-              </button>
-            ))}
           </div>
-        )}
-
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          {visible.length === 0 && (
-            <div className="text-center py-12 text-muted-foreground/60 italic text-xs font-display uppercase tracking-widest">
-              No reports yet for {district}
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <h2 className="font-display text-3xl md:text-5xl font-extrabold uppercase tracking-tight leading-none">
+                {district}
+              </h2>
+              <div className="font-display text-sm md:text-base text-foreground/80 mt-2">
+                {headline}
+              </div>
             </div>
-          )}
-          {visible.map((r) => (
-            <ReportCard key={r.id} report={r} />
-          ))}
+            <div className="flex gap-6">
+              <DossierMetric value={alerts.length} label="Official" tone={sev} />
+              <DossierMetric value={reports.length} label="Crowd" tone="primary" />
+              <DossierMetric value={places.length} label="Places" tone="muted" />
+            </div>
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-y-auto">
+          {/* Official Alerts Strip */}
+          <section className="border-b border-surface">
+            <div className="px-6 pt-5 pb-3 flex items-center justify-between">
+              <h3 className="font-display text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                Official Advisories
+              </h3>
+              <span className="font-display text-[10px] uppercase tracking-widest text-muted-foreground/70">
+                NDMA Sachet · IMD · KSDMA
+              </span>
+            </div>
+            {alerts.length === 0 ? (
+              <div className="px-6 pb-6 text-sm text-muted-foreground/70 italic">
+                No official advisories are active for {district} right now.
+              </div>
+            ) : (
+              <div className="px-6 pb-6 grid grid-cols-1 md:grid-cols-2 gap-3">
+                {alerts.map((a) => (
+                  <OfficialAlertCard key={a.id} alert={a} />
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Crowd Reports */}
+          <section>
+            <div className="px-6 pt-5 pb-3 flex items-center justify-between">
+              <h3 className="font-display text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                Crowd Briefs ({visibleReports.length})
+              </h3>
+            </div>
+
+            {places.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto px-6 pb-3">
+                <button
+                  type="button"
+                  onClick={() => setActivePlace(null)}
+                  className={`shrink-0 font-display text-[10px] uppercase tracking-widest font-bold px-3 py-1.5 border transition-colors ${
+                    activePlace === null
+                      ? "border-primary bg-primary/20 text-primary"
+                      : "border-surface text-muted-foreground hover:border-foreground/40"
+                  }`}
+                >
+                  All places
+                </button>
+                {places.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setActivePlace(p)}
+                    className={`shrink-0 font-display text-[10px] uppercase tracking-widest font-bold px-3 py-1.5 border transition-colors ${
+                      activePlace === p
+                        ? "border-primary bg-primary/20 text-primary"
+                        : "border-surface text-muted-foreground hover:border-foreground/40"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="px-6 pb-6 space-y-3">
+              {visibleReports.length === 0 ? (
+                <div className="text-center py-10 text-muted-foreground/60 italic text-xs font-display uppercase tracking-widest">
+                  No crowd reports yet{activePlace ? ` for ${activePlace}` : ""}.
+                </div>
+              ) : (
+                visibleReports.map((r) => <ReportCard key={r.id} report={r} />)
+              )}
+            </div>
+          </section>
         </div>
       </div>
     </div>
   );
 }
+
+function DossierMetric({
+  value,
+  label,
+  tone,
+}: {
+  value: number;
+  label: string;
+  tone: Severity | "primary" | "muted";
+}) {
+  const color =
+    tone === "critical"
+      ? "text-critical"
+      : tone === "warn"
+        ? "text-warn"
+        : tone === "primary"
+          ? "text-primary"
+          : tone === "safe"
+            ? "text-primary"
+            : "text-foreground/50";
+  return (
+    <div className="text-right">
+      <div className={`font-display text-3xl font-bold tabular-nums ${color}`}>{value}</div>
+      <div className="font-display text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function OfficialAlertCard({ alert }: { alert: OfficialAlert }) {
+  return (
+    <article
+      className={`bg-surface border-l-4 ${severityBorder(alert.severity)} p-4 space-y-2`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div
+            className={`font-display text-[10px] uppercase tracking-widest font-bold ${severityText(alert.severity)}`}
+          >
+            {alert.severityLabel} · {alert.disasterType}
+          </div>
+          <div className="font-display text-[10px] uppercase tracking-widest text-muted-foreground mt-0.5">
+            {alert.source}
+          </div>
+        </div>
+        <div className="font-display text-[10px] uppercase tracking-widest text-muted-foreground text-right shrink-0">
+          {formatAlertWindow(alert.effectiveStart)}
+          {alert.effectiveEnd ? ` → ${formatAlertWindow(alert.effectiveEnd)}` : ""}
+        </div>
+      </div>
+      {alert.message && <p className="text-sm text-foreground/90">{alert.message}</p>}
+      <div className="font-display text-[10px] uppercase tracking-widest text-muted-foreground/80">
+        Area: {alert.areaDescription}
+      </div>
+    </article>
+  );
+}
+
 
 /* ---------------- Cards ---------------- */
 
