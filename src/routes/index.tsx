@@ -319,12 +319,57 @@ function useSignedImage(pathOrUrl: string | null) {
   return url;
 }
 
+function useKeralaAlerts() {
+  const [alerts, setAlerts] = useState<OfficialAlert[]>([]);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  useEffect(() => {
+    let active = true;
+    const load = () => {
+      getKeralaAlerts()
+        .then((data) => {
+          if (!active) return;
+          setAlerts(data);
+          setStatus("ready");
+        })
+        .catch((err) => {
+          console.error("[alerts] fetch failed", err);
+          if (active) setStatus("error");
+        });
+    };
+    load();
+    const id = setInterval(load, 5 * 60 * 1000);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, []);
+  return { alerts, status };
+}
+
+function formatAlertWindow(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "2-digit",
+    month: "short",
+  });
+}
+
 /* ---------------- main page ---------------- */
 
 function Home() {
   const time = useLocalTime();
-  const tickerItems = [...WEATHER, ...WEATHER];
   const { reports, status, flashId } = useLiveReports(40);
+  const { alerts, status: alertStatus } = useKeralaAlerts();
+  const tickerItems = useMemo(() => {
+    if (alerts.length === 0) return [];
+    return [...alerts, ...alerts];
+  }, [alerts]);
+  const topAlert = alerts[0] ?? null;
+
 
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
