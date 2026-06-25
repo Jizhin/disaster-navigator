@@ -138,6 +138,8 @@ function useLocalTime() {
 function Home() {
   const time = useLocalTime();
   const tickerItems = [...WEATHER, ...WEATHER];
+  const { reports, status } = useLiveReports(20);
+
 
   return (
     <div className="min-h-screen w-full bg-background text-foreground p-4 md:p-8">
