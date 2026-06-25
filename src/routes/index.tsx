@@ -401,45 +401,89 @@ function Home() {
           </div>
         </header>
 
-        {/* Weather Ticker */}
+        {/* Official Alerts Ticker (NDMA Sachet / IMD / KSDMA) */}
         <div className="bg-surface border-y border-primary/20 overflow-hidden py-3">
-          <div className="flex whitespace-nowrap gap-8 font-display text-xs uppercase font-bold tracking-wider animate-ticker w-max">
-            {tickerItems.map((w, i) => (
-              <span key={i} className="flex items-center gap-2">
-                <span className={severityText(w.severity)}>●</span>
-                <span className="text-foreground">{w.name}:</span>
-                <span className="text-muted-foreground">
-                  {w.condition} {w.temp}°C
+          {tickerItems.length === 0 ? (
+            <div className="font-display text-xs uppercase font-bold tracking-wider text-muted-foreground px-4">
+              {alertStatus === "loading"
+                ? "Fetching official advisories from NDMA Sachet…"
+                : alertStatus === "error"
+                  ? "Official advisory feed unavailable right now."
+                  : "No active official advisories for Kerala right now."}
+            </div>
+          ) : (
+            <div className="flex whitespace-nowrap gap-8 font-display text-xs uppercase font-bold tracking-wider animate-ticker w-max">
+              {tickerItems.map((a, i) => (
+                <span key={`${a.id}-${i}`} className="flex items-center gap-2">
+                  <span className={severityText(a.severity)}>●</span>
+                  <span className="text-foreground">
+                    {a.district ?? "Kerala"}:
+                  </span>
+                  <span className="text-muted-foreground">
+                    {a.disasterType} · {a.source}
+                  </span>
+                  <span className="text-muted-foreground/40 ml-4">|</span>
                 </span>
-                <span className="text-muted-foreground/40 ml-4">|</span>
-              </span>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Main Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Left: Featured + Location + Action */}
           <div className="lg:col-span-8 space-y-6">
-            {/* Critical Lede */}
-            <article className="relative bg-critical/10 border-l-4 border-critical p-6">
-              <div className="flex justify-between items-start mb-4 gap-4 flex-wrap">
-                <span className="font-display bg-critical text-critical-foreground px-3 py-1 text-xs font-bold uppercase tracking-widest">
-                  Critical Alert
-                </span>
-                <span className="text-xs text-muted-foreground font-display">2 mins ago</span>
-              </div>
-              <h2 className="font-display text-2xl md:text-3xl font-bold mb-3 leading-tight">
-                Wayanad: Precautionary Evacuation Order for Meppadi Region
-              </h2>
-              <p className="text-base md:text-lg text-foreground/80 mb-6">
-                Due to sustained heavy rainfall, residents in high-risk zones of Meppadi are advised
-                to move to designated relief camps immediately.
-              </p>
-              <button className="font-display flex items-center gap-2 text-primary font-bold uppercase text-sm tracking-widest hover:underline">
-                Read Full Protocol →
-              </button>
-            </article>
+            {/* Critical Lede — top official alert (NDMA / IMD / KSDMA) */}
+            {topAlert ? (
+              <article
+                className={`relative border-l-4 p-6 ${
+                  topAlert.severity === "critical"
+                    ? "bg-critical/10 border-critical"
+                    : topAlert.severity === "warn"
+                      ? "bg-warn/10 border-warn"
+                      : "bg-primary/10 border-primary"
+                }`}
+              >
+                <div className="flex justify-between items-start mb-4 gap-4 flex-wrap">
+                  <span
+                    className={`font-display px-3 py-1 text-xs font-bold uppercase tracking-widest ${
+                      topAlert.severity === "critical"
+                        ? "bg-critical text-critical-foreground"
+                        : topAlert.severity === "warn"
+                          ? "bg-warn text-background"
+                          : "bg-primary text-background"
+                    }`}
+                  >
+                    {topAlert.severityLabel} · {topAlert.source}
+                  </span>
+                  <span className="text-xs text-muted-foreground font-display">
+                    {formatAlertWindow(topAlert.effectiveStart)}
+                  </span>
+                </div>
+                <h2 className="font-display text-2xl md:text-3xl font-bold mb-3 leading-tight">
+                  {topAlert.district ?? "Kerala"}: {topAlert.disasterType}
+                </h2>
+                <p className="text-base md:text-lg text-foreground/80 mb-4">
+                  {topAlert.message || topAlert.areaDescription}
+                </p>
+                <div className="font-display text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Area: {topAlert.areaDescription}
+                </div>
+              </article>
+            ) : (
+              <article className="relative bg-surface border-l-4 border-primary/40 p-6">
+                <div className="font-display text-[10px] uppercase tracking-widest text-primary font-bold mb-2">
+                  All Clear · Official Feed
+                </div>
+                <h2 className="font-display text-2xl md:text-3xl font-bold mb-3 leading-tight">
+                  No active NDMA / IMD advisories for Kerala
+                </h2>
+                <p className="text-base text-foreground/70">
+                  Community reports below are crowd-sourced. Official warnings will appear here the moment they are issued.
+                </p>
+              </article>
+            )}
+
 
             {/* Location picker + Report action */}
             <div className="bg-surface p-6 space-y-5">
