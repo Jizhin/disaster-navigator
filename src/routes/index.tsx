@@ -50,12 +50,69 @@ const WEATHER: WeatherItem[] = [
   { name: "Kasaragod", condition: "Rain showers", temp: 29, severity: "safe" },
 ];
 
-const REPORTS: Report[] = [
-  { district: "Kochi", time: "14:15", message: "Minor waterlogging on MG Road.", severity: "warn" },
-  { district: "Thrissur", time: "14:02", message: "Main Highway cleared of debris.", severity: "safe" },
-  { district: "Alappuzha", time: "13:45", message: "Ferry services suspended temporarily.", severity: "safe" },
-  { district: "Idukki", time: "13:20", message: "Hairline fissures reported on Munnar Gap Road.", severity: "critical" },
-];
+function useLiveReports(limit = 20) {
+  const [reports, setReports] = useState<Report[]>([]);
+  const [status, setStatus] = useState<"connecting" | "live" | "offline">("connecting");
+
+  useEffect(() => {
+    let active = true;
+
+    supabase
+      .from("reports")
+      .select("id, district, message, severity, created_at")
+      .order("created_at", { ascending: false })
+      .limit(limit)
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) {
+          console.error("[reports] initial load failed", error);
+          setStatus("offline");
+          return;
+        }
+        setReports((data ?? []) as Report[]);
+      });
+
+    const channel = supabase
+      .channel("reports-feed")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "reports" },
+        (payload) => {
+          const next = payload.new as Report;
+          setReports((prev) => [next, ...prev].slice(0, limit));
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "reports" },
+        (payload) => {
+          const removed = payload.old as { id?: string };
+          if (!removed?.id) return;
+          setReports((prev) => prev.filter((r) => r.id !== removed.id));
+        },
+      )
+      .subscribe((s) => {
+        if (s === "SUBSCRIBED") setStatus("live");
+        else if (s === "CHANNEL_ERROR" || s === "TIMED_OUT" || s === "CLOSED") setStatus("offline");
+      });
+
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
+  }, [limit]);
+
+  return { reports, status };
+}
+
+function formatReportTime(iso: string) {
+  const d = new Date(iso);
+  const diffSec = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+  if (diffSec < 60) return "just now";
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+  return d.toLocaleString("en-IN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short" });
+}
 
 const severityColor = (s: Severity) =>
   s === "critical" ? "bg-critical" : s === "warn" ? "bg-warn" : "bg-primary";
