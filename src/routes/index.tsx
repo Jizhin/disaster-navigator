@@ -606,7 +606,14 @@ function Home() {
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-px bg-surface border border-surface">
             {DISTRICTS.map((d) => {
-              const count = reports.filter((r) => r.district === d.name).length;
+              const dReports = reports.filter((r) => r.district === d.name);
+              const dAlerts = alerts.filter((a) => a.district === d.name);
+              const total = dReports.length + dAlerts.length;
+              const sev: Severity = maxSeverity([
+                ...dReports.map((r) => ({ severity: r.severity })),
+                ...dAlerts.map((a) => ({ severity: a.severity })),
+              ]);
+              const load = total === 0 ? 0 : Math.min(1, total / 8);
               return (
                 <button
                   key={d.code}
@@ -616,18 +623,20 @@ function Home() {
                 >
                   <div className="font-display text-[10px] uppercase text-muted-foreground mb-2 font-bold flex justify-between">
                     <span>{d.code}</span>
-                    {count > 0 && (
-                      <span className="text-warn">{count}</span>
+                    {total > 0 && (
+                      <span className={severityText(sev)}>{total}</span>
                     )}
                   </div>
                   <div className="font-display text-sm font-bold uppercase tracking-tight">
                     {d.name}
                   </div>
                   <div className="mt-4 h-1 w-full bg-foreground/5 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full ${severityColor(d.severity)} ${d.severity === "critical" ? "animate-pulse" : ""}`}
-                      style={{ width: `${Math.max(8, d.load * 100)}%` }}
-                    />
+                    {total > 0 && (
+                      <div
+                        className={`h-full ${severityColor(sev)} ${sev === "critical" ? "animate-pulse" : ""}`}
+                        style={{ width: `${Math.max(8, load * 100)}%` }}
+                      />
+                    )}
                   </div>
                 </button>
               );
@@ -636,7 +645,7 @@ function Home() {
         </section>
 
         <footer className="pt-8 pb-4 text-center font-display text-[10px] uppercase tracking-widest text-muted-foreground/60">
-          Community-powered · Built for Kerala
+          Community-powered + Official feeds (NDMA Sachet · IMD · KSDMA) · Built for Kerala
         </footer>
       </div>
 
@@ -652,9 +661,11 @@ function Home() {
         <DistrictModal
           district={districtFocus}
           reports={reports.filter((r) => r.district === districtFocus)}
+          alerts={alerts.filter((a) => a.district === districtFocus)}
           onClose={() => setDistrictFocus(null)}
         />
       )}
+
     </div>
   );
 }
