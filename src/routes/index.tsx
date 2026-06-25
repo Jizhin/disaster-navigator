@@ -139,6 +139,9 @@ function Home() {
   const time = useLocalTime();
   const tickerItems = [...WEATHER, ...WEATHER];
   const { reports, status } = useLiveReports(20);
+  const [reportOpen, setReportOpen] = useState(false);
+
+
 
 
   return (
