@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { getKeralaAlerts, type OfficialAlert } from "@/lib/alerts";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -20,12 +21,9 @@ type Severity = "safe" | "warn" | "critical";
 type District = {
   code: string;
   name: string;
-  severity: Severity;
-  load: number;
   lat: number;
   lon: number;
 };
-type WeatherItem = { name: string; condition: string; temp: number; severity: Severity };
 type Report = {
   id: string;
   district: string;
@@ -63,35 +61,34 @@ type Place = {
 };
 
 const DISTRICTS: District[] = [
-  { code: "KL-01", name: "Trivandrum", severity: "safe", load: 0.75, lat: 8.5241, lon: 76.9366 },
-  { code: "KL-02", name: "Kollam", severity: "safe", load: 1, lat: 8.8932, lon: 76.6141 },
-  { code: "KL-03", name: "Pathanamthitta", severity: "warn", load: 0.33, lat: 9.2648, lon: 76.787 },
-  { code: "KL-04", name: "Alappuzha", severity: "safe", load: 0.83, lat: 9.4981, lon: 76.3388 },
-  { code: "KL-05", name: "Kottayam", severity: "safe", load: 0.66, lat: 9.5916, lon: 76.5222 },
-  { code: "KL-06", name: "Idukki", severity: "critical", load: 0.5, lat: 9.85, lon: 76.97 },
-  { code: "KL-07", name: "Ernakulam", severity: "warn", load: 0.25, lat: 9.9816, lon: 76.2999 },
-  { code: "KL-08", name: "Thrissur", severity: "safe", load: 0.5, lat: 10.5276, lon: 76.2144 },
-  { code: "KL-09", name: "Palakkad", severity: "warn", load: 0.75, lat: 10.7867, lon: 76.6548 },
-  { code: "KL-10", name: "Malappuram", severity: "safe", load: 1, lat: 11.041, lon: 76.0788 },
-  { code: "KL-11", name: "Kozhikode", severity: "warn", load: 0.2, lat: 11.2588, lon: 75.7804 },
-  { code: "KL-12", name: "Wayanad", severity: "critical", load: 1, lat: 11.6854, lon: 76.132 },
-  { code: "KL-13", name: "Kannur", severity: "safe", load: 1, lat: 11.8745, lon: 75.3704 },
-  { code: "KL-14", name: "Kasaragod", severity: "safe", load: 1, lat: 12.4996, lon: 74.9869 },
+  { code: "KL-01", name: "Trivandrum", lat: 8.5241, lon: 76.9366 },
+  { code: "KL-02", name: "Kollam", lat: 8.8932, lon: 76.6141 },
+  { code: "KL-03", name: "Pathanamthitta", lat: 9.2648, lon: 76.787 },
+  { code: "KL-04", name: "Alappuzha", lat: 9.4981, lon: 76.3388 },
+  { code: "KL-05", name: "Kottayam", lat: 9.5916, lon: 76.5222 },
+  { code: "KL-06", name: "Idukki", lat: 9.85, lon: 76.97 },
+  { code: "KL-07", name: "Ernakulam", lat: 9.9816, lon: 76.2999 },
+  { code: "KL-08", name: "Thrissur", lat: 10.5276, lon: 76.2144 },
+  { code: "KL-09", name: "Palakkad", lat: 10.7867, lon: 76.6548 },
+  { code: "KL-10", name: "Malappuram", lat: 11.041, lon: 76.0788 },
+  { code: "KL-11", name: "Kozhikode", lat: 11.2588, lon: 75.7804 },
+  { code: "KL-12", name: "Wayanad", lat: 11.6854, lon: 76.132 },
+  { code: "KL-13", name: "Kannur", lat: 11.8745, lon: 75.3704 },
+  { code: "KL-14", name: "Kasaragod", lat: 12.4996, lon: 74.9869 },
 ];
 
 const KERALA_CENTER = { lat: 10.5, lon: 76.3 };
 
-const WEATHER: WeatherItem[] = [
-  { name: "Idukki", condition: "Thunderstorm warning", temp: 25, severity: "warn" },
-  { name: "Kollam", condition: "Drizzle likely", temp: 29, severity: "safe" },
-  { name: "Kottayam", condition: "Clear", temp: 31, severity: "safe" },
-  { name: "Wayanad", condition: "Heavy rain alert", temp: 22, severity: "critical" },
-  { name: "Palakkad", condition: "Heat advisory", temp: 36, severity: "warn" },
-  { name: "Ernakulam", condition: "Overcast", temp: 29, severity: "safe" },
-  { name: "Thrissur", condition: "Thunderstorm warning", temp: 30, severity: "warn" },
-  { name: "Kannur", condition: "Rain showers", temp: 29, severity: "safe" },
-  { name: "Kasaragod", condition: "Rain showers", temp: 29, severity: "safe" },
-];
+const SEVERITY_RANK: Record<Severity, number> = { safe: 0, warn: 1, critical: 2 };
+
+function maxSeverity(items: Array<{ severity: Severity }>): Severity {
+  let best: Severity = "safe";
+  for (const it of items) {
+    if (SEVERITY_RANK[it.severity] > SEVERITY_RANK[best]) best = it.severity;
+  }
+  return best;
+}
+
 
 /* ---------------- helpers ---------------- */
 
@@ -322,12 +319,57 @@ function useSignedImage(pathOrUrl: string | null) {
   return url;
 }
 
+function useKeralaAlerts() {
+  const [alerts, setAlerts] = useState<OfficialAlert[]>([]);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  useEffect(() => {
+    let active = true;
+    const load = () => {
+      getKeralaAlerts()
+        .then((data) => {
+          if (!active) return;
+          setAlerts(data);
+          setStatus("ready");
+        })
+        .catch((err) => {
+          console.error("[alerts] fetch failed", err);
+          if (active) setStatus("error");
+        });
+    };
+    load();
+    const id = setInterval(load, 5 * 60 * 1000);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, []);
+  return { alerts, status };
+}
+
+function formatAlertWindow(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "2-digit",
+    month: "short",
+  });
+}
+
 /* ---------------- main page ---------------- */
 
 function Home() {
   const time = useLocalTime();
-  const tickerItems = [...WEATHER, ...WEATHER];
   const { reports, status, flashId } = useLiveReports(40);
+  const { alerts, status: alertStatus } = useKeralaAlerts();
+  const tickerItems = useMemo(() => {
+    if (alerts.length === 0) return [];
+    return [...alerts, ...alerts];
+  }, [alerts]);
+  const topAlert = alerts[0] ?? null;
+
 
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
@@ -359,45 +401,89 @@ function Home() {
           </div>
         </header>
 
-        {/* Weather Ticker */}
+        {/* Official Alerts Ticker (NDMA Sachet / IMD / KSDMA) */}
         <div className="bg-surface border-y border-primary/20 overflow-hidden py-3">
-          <div className="flex whitespace-nowrap gap-8 font-display text-xs uppercase font-bold tracking-wider animate-ticker w-max">
-            {tickerItems.map((w, i) => (
-              <span key={i} className="flex items-center gap-2">
-                <span className={severityText(w.severity)}>●</span>
-                <span className="text-foreground">{w.name}:</span>
-                <span className="text-muted-foreground">
-                  {w.condition} {w.temp}°C
+          {tickerItems.length === 0 ? (
+            <div className="font-display text-xs uppercase font-bold tracking-wider text-muted-foreground px-4">
+              {alertStatus === "loading"
+                ? "Fetching official advisories from NDMA Sachet…"
+                : alertStatus === "error"
+                  ? "Official advisory feed unavailable right now."
+                  : "No active official advisories for Kerala right now."}
+            </div>
+          ) : (
+            <div className="flex whitespace-nowrap gap-8 font-display text-xs uppercase font-bold tracking-wider animate-ticker w-max">
+              {tickerItems.map((a, i) => (
+                <span key={`${a.id}-${i}`} className="flex items-center gap-2">
+                  <span className={severityText(a.severity)}>●</span>
+                  <span className="text-foreground">
+                    {a.district ?? "Kerala"}:
+                  </span>
+                  <span className="text-muted-foreground">
+                    {a.disasterType} · {a.source}
+                  </span>
+                  <span className="text-muted-foreground/40 ml-4">|</span>
                 </span>
-                <span className="text-muted-foreground/40 ml-4">|</span>
-              </span>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Main Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Left: Featured + Location + Action */}
           <div className="lg:col-span-8 space-y-6">
-            {/* Critical Lede */}
-            <article className="relative bg-critical/10 border-l-4 border-critical p-6">
-              <div className="flex justify-between items-start mb-4 gap-4 flex-wrap">
-                <span className="font-display bg-critical text-critical-foreground px-3 py-1 text-xs font-bold uppercase tracking-widest">
-                  Critical Alert
-                </span>
-                <span className="text-xs text-muted-foreground font-display">2 mins ago</span>
-              </div>
-              <h2 className="font-display text-2xl md:text-3xl font-bold mb-3 leading-tight">
-                Wayanad: Precautionary Evacuation Order for Meppadi Region
-              </h2>
-              <p className="text-base md:text-lg text-foreground/80 mb-6">
-                Due to sustained heavy rainfall, residents in high-risk zones of Meppadi are advised
-                to move to designated relief camps immediately.
-              </p>
-              <button className="font-display flex items-center gap-2 text-primary font-bold uppercase text-sm tracking-widest hover:underline">
-                Read Full Protocol →
-              </button>
-            </article>
+            {/* Critical Lede — top official alert (NDMA / IMD / KSDMA) */}
+            {topAlert ? (
+              <article
+                className={`relative border-l-4 p-6 ${
+                  topAlert.severity === "critical"
+                    ? "bg-critical/10 border-critical"
+                    : topAlert.severity === "warn"
+                      ? "bg-warn/10 border-warn"
+                      : "bg-primary/10 border-primary"
+                }`}
+              >
+                <div className="flex justify-between items-start mb-4 gap-4 flex-wrap">
+                  <span
+                    className={`font-display px-3 py-1 text-xs font-bold uppercase tracking-widest ${
+                      topAlert.severity === "critical"
+                        ? "bg-critical text-critical-foreground"
+                        : topAlert.severity === "warn"
+                          ? "bg-warn text-background"
+                          : "bg-primary text-background"
+                    }`}
+                  >
+                    {topAlert.severityLabel} · {topAlert.source}
+                  </span>
+                  <span className="text-xs text-muted-foreground font-display">
+                    {formatAlertWindow(topAlert.effectiveStart)}
+                  </span>
+                </div>
+                <h2 className="font-display text-2xl md:text-3xl font-bold mb-3 leading-tight">
+                  {topAlert.district ?? "Kerala"}: {topAlert.disasterType}
+                </h2>
+                <p className="text-base md:text-lg text-foreground/80 mb-4">
+                  {topAlert.message || topAlert.areaDescription}
+                </p>
+                <div className="font-display text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Area: {topAlert.areaDescription}
+                </div>
+              </article>
+            ) : (
+              <article className="relative bg-surface border-l-4 border-primary/40 p-6">
+                <div className="font-display text-[10px] uppercase tracking-widest text-primary font-bold mb-2">
+                  All Clear · Official Feed
+                </div>
+                <h2 className="font-display text-2xl md:text-3xl font-bold mb-3 leading-tight">
+                  No active NDMA / IMD advisories for Kerala
+                </h2>
+                <p className="text-base text-foreground/70">
+                  Community reports below are crowd-sourced. Official warnings will appear here the moment they are issued.
+                </p>
+              </article>
+            )}
+
 
             {/* Location picker + Report action */}
             <div className="bg-surface p-6 space-y-5">
@@ -443,11 +529,40 @@ function Home() {
                 Kerala Overview
               </h3>
               <div className="grid grid-cols-2 gap-6">
-                <Stat value={String(reports.filter((r) => r.severity !== "safe").length)} label="Active Alerts" tone="warn" />
-                <Stat value={String(reports.filter((r) => r.severity === "safe").length)} label="Safe Pings" tone="primary" />
-                <Stat value="2.4k" label="Contributors" tone="muted" />
-                <Stat value="0" label="Fatalities" tone="muted" />
+                <Stat
+                  value={String(alerts.filter((a) => a.severity !== "safe").length)}
+                  label="Official Alerts"
+                  tone="warn"
+                />
+                <Stat
+                  value={String(reports.length)}
+                  label="Crowd Reports"
+                  tone="primary"
+                />
+                <Stat
+                  value={String(
+                    new Set([
+                      ...alerts.map((a) => a.district).filter(Boolean),
+                      ...reports.map((r) => r.district),
+                    ]).size,
+                  )}
+                  label="Districts Active"
+                  tone="warn"
+                />
+                <Stat
+                  value={String(
+                    new Set(
+                      [
+                        ...alerts.filter((a) => a.severity === "critical").map((a) => a.district),
+                        ...reports.filter((r) => r.severity === "critical").map((r) => r.district),
+                      ].filter(Boolean),
+                    ).size,
+                  )}
+                  label="Critical Zones"
+                  tone="muted"
+                />
               </div>
+
             </div>
 
             <div className="bg-surface flex flex-col h-[400px]">
@@ -491,7 +606,14 @@ function Home() {
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-px bg-surface border border-surface">
             {DISTRICTS.map((d) => {
-              const count = reports.filter((r) => r.district === d.name).length;
+              const dReports = reports.filter((r) => r.district === d.name);
+              const dAlerts = alerts.filter((a) => a.district === d.name);
+              const total = dReports.length + dAlerts.length;
+              const sev: Severity = maxSeverity([
+                ...dReports.map((r) => ({ severity: r.severity })),
+                ...dAlerts.map((a) => ({ severity: a.severity })),
+              ]);
+              const load = total === 0 ? 0 : Math.min(1, total / 8);
               return (
                 <button
                   key={d.code}
@@ -501,18 +623,20 @@ function Home() {
                 >
                   <div className="font-display text-[10px] uppercase text-muted-foreground mb-2 font-bold flex justify-between">
                     <span>{d.code}</span>
-                    {count > 0 && (
-                      <span className="text-warn">{count}</span>
+                    {total > 0 && (
+                      <span className={severityText(sev)}>{total}</span>
                     )}
                   </div>
                   <div className="font-display text-sm font-bold uppercase tracking-tight">
                     {d.name}
                   </div>
                   <div className="mt-4 h-1 w-full bg-foreground/5 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full ${severityColor(d.severity)} ${d.severity === "critical" ? "animate-pulse" : ""}`}
-                      style={{ width: `${Math.max(8, d.load * 100)}%` }}
-                    />
+                    {total > 0 && (
+                      <div
+                        className={`h-full ${severityColor(sev)} ${sev === "critical" ? "animate-pulse" : ""}`}
+                        style={{ width: `${Math.max(8, load * 100)}%` }}
+                      />
+                    )}
                   </div>
                 </button>
               );
@@ -521,7 +645,7 @@ function Home() {
         </section>
 
         <footer className="pt-8 pb-4 text-center font-display text-[10px] uppercase tracking-widest text-muted-foreground/60">
-          Community-powered · Built for Kerala
+          Community-powered + Official feeds (NDMA Sachet · IMD · KSDMA) · Built for Kerala
         </footer>
       </div>
 
@@ -537,9 +661,11 @@ function Home() {
         <DistrictModal
           district={districtFocus}
           reports={reports.filter((r) => r.district === districtFocus)}
+          alerts={alerts.filter((a) => a.district === districtFocus)}
           onClose={() => setDistrictFocus(null)}
         />
       )}
+
     </div>
   );
 }
@@ -905,10 +1031,12 @@ function ReportAlertModal({
 function DistrictModal({
   district,
   reports,
+  alerts,
   onClose,
 }: {
   district: string;
   reports: Report[];
+  alerts: OfficialAlert[];
   onClose: () => void;
 }) {
   const places = useMemo(() => {
@@ -917,82 +1045,195 @@ function DistrictModal({
     return Array.from(set);
   }, [reports]);
   const [activePlace, setActivePlace] = useState<string | null>(null);
-  const visible = activePlace ? reports.filter((r) => r.place === activePlace) : reports;
+  const visibleReports = activePlace
+    ? reports.filter((r) => r.place === activePlace)
+    : reports;
+
+  const sev = maxSeverity([
+    ...reports.map((r) => ({ severity: r.severity })),
+    ...alerts.map((a) => ({ severity: a.severity })),
+  ]);
+  const headline =
+    alerts.find((a) => a.severity === "critical")?.disasterType ??
+    alerts[0]?.disasterType ??
+    (reports.length > 0 ? "Crowd reports active" : "No active incidents");
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm p-4"
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-3xl bg-surface border border-primary/30 max-h-[90vh] flex flex-col"
+        className="w-full max-w-5xl bg-background border border-surface max-h-[92vh] flex flex-col overflow-hidden"
       >
-        <div className="p-5 border-b border-background/40 flex items-start justify-between gap-4">
-          <div>
-            <div className="font-display text-[10px] uppercase tracking-widest text-primary font-bold mb-1">
-              District Inspect
+        {/* Newsroom Dossier Masthead */}
+        <header className={`relative border-b-4 ${severityBorder(sev)} bg-surface p-6`}>
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <div className="font-display text-[10px] uppercase tracking-[0.3em] text-muted-foreground font-bold">
+              Dossier · Kerala Disaster Watch
             </div>
-            <h2 className="font-display text-xl font-bold uppercase tracking-tight">
-              {district}
-            </h2>
-            <div className="font-display text-[10px] uppercase tracking-widest text-muted-foreground mt-1">
-              {reports.length} live report{reports.length === 1 ? "" : "s"}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="font-display text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground"
-          >
-            Close ✕
-          </button>
-        </div>
-
-        {places.length > 0 && (
-          <div className="flex gap-2 overflow-x-auto px-5 py-3 border-b border-background/40">
             <button
               type="button"
-              onClick={() => setActivePlace(null)}
-              className={`shrink-0 font-display text-[10px] uppercase tracking-widest font-bold px-3 py-1.5 border transition-colors ${
-                activePlace === null
-                  ? "border-primary bg-primary/20 text-primary"
-                  : "border-surface text-muted-foreground hover:border-foreground/40"
-              }`}
+              onClick={onClose}
+              className="font-display text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground"
             >
-              All places
+              Close ✕
             </button>
-            {places.map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => setActivePlace(p)}
-                className={`shrink-0 font-display text-[10px] uppercase tracking-widest font-bold px-3 py-1.5 border transition-colors ${
-                  activePlace === p
-                    ? "border-primary bg-primary/20 text-primary"
-                    : "border-surface text-muted-foreground hover:border-foreground/40"
-                }`}
-              >
-                {p}
-              </button>
-            ))}
           </div>
-        )}
-
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          {visible.length === 0 && (
-            <div className="text-center py-12 text-muted-foreground/60 italic text-xs font-display uppercase tracking-widest">
-              No reports yet for {district}
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <h2 className="font-display text-3xl md:text-5xl font-extrabold uppercase tracking-tight leading-none">
+                {district}
+              </h2>
+              <div className="font-display text-sm md:text-base text-foreground/80 mt-2">
+                {headline}
+              </div>
             </div>
-          )}
-          {visible.map((r) => (
-            <ReportCard key={r.id} report={r} />
-          ))}
+            <div className="flex gap-6">
+              <DossierMetric value={alerts.length} label="Official" tone={sev} />
+              <DossierMetric value={reports.length} label="Crowd" tone="primary" />
+              <DossierMetric value={places.length} label="Places" tone="muted" />
+            </div>
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-y-auto">
+          {/* Official Alerts Strip */}
+          <section className="border-b border-surface">
+            <div className="px-6 pt-5 pb-3 flex items-center justify-between">
+              <h3 className="font-display text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                Official Advisories
+              </h3>
+              <span className="font-display text-[10px] uppercase tracking-widest text-muted-foreground/70">
+                NDMA Sachet · IMD · KSDMA
+              </span>
+            </div>
+            {alerts.length === 0 ? (
+              <div className="px-6 pb-6 text-sm text-muted-foreground/70 italic">
+                No official advisories are active for {district} right now.
+              </div>
+            ) : (
+              <div className="px-6 pb-6 grid grid-cols-1 md:grid-cols-2 gap-3">
+                {alerts.map((a) => (
+                  <OfficialAlertCard key={a.id} alert={a} />
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Crowd Reports */}
+          <section>
+            <div className="px-6 pt-5 pb-3 flex items-center justify-between">
+              <h3 className="font-display text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                Crowd Briefs ({visibleReports.length})
+              </h3>
+            </div>
+
+            {places.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto px-6 pb-3">
+                <button
+                  type="button"
+                  onClick={() => setActivePlace(null)}
+                  className={`shrink-0 font-display text-[10px] uppercase tracking-widest font-bold px-3 py-1.5 border transition-colors ${
+                    activePlace === null
+                      ? "border-primary bg-primary/20 text-primary"
+                      : "border-surface text-muted-foreground hover:border-foreground/40"
+                  }`}
+                >
+                  All places
+                </button>
+                {places.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setActivePlace(p)}
+                    className={`shrink-0 font-display text-[10px] uppercase tracking-widest font-bold px-3 py-1.5 border transition-colors ${
+                      activePlace === p
+                        ? "border-primary bg-primary/20 text-primary"
+                        : "border-surface text-muted-foreground hover:border-foreground/40"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="px-6 pb-6 space-y-3">
+              {visibleReports.length === 0 ? (
+                <div className="text-center py-10 text-muted-foreground/60 italic text-xs font-display uppercase tracking-widest">
+                  No crowd reports yet{activePlace ? ` for ${activePlace}` : ""}.
+                </div>
+              ) : (
+                visibleReports.map((r) => <ReportCard key={r.id} report={r} />)
+              )}
+            </div>
+          </section>
         </div>
       </div>
     </div>
   );
 }
+
+function DossierMetric({
+  value,
+  label,
+  tone,
+}: {
+  value: number;
+  label: string;
+  tone: Severity | "primary" | "muted";
+}) {
+  const color =
+    tone === "critical"
+      ? "text-critical"
+      : tone === "warn"
+        ? "text-warn"
+        : tone === "primary"
+          ? "text-primary"
+          : tone === "safe"
+            ? "text-primary"
+            : "text-foreground/50";
+  return (
+    <div className="text-right">
+      <div className={`font-display text-3xl font-bold tabular-nums ${color}`}>{value}</div>
+      <div className="font-display text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function OfficialAlertCard({ alert }: { alert: OfficialAlert }) {
+  return (
+    <article
+      className={`bg-surface border-l-4 ${severityBorder(alert.severity)} p-4 space-y-2`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div
+            className={`font-display text-[10px] uppercase tracking-widest font-bold ${severityText(alert.severity)}`}
+          >
+            {alert.severityLabel} · {alert.disasterType}
+          </div>
+          <div className="font-display text-[10px] uppercase tracking-widest text-muted-foreground mt-0.5">
+            {alert.source}
+          </div>
+        </div>
+        <div className="font-display text-[10px] uppercase tracking-widest text-muted-foreground text-right shrink-0">
+          {formatAlertWindow(alert.effectiveStart)}
+          {alert.effectiveEnd ? ` → ${formatAlertWindow(alert.effectiveEnd)}` : ""}
+        </div>
+      </div>
+      {alert.message && <p className="text-sm text-foreground/90">{alert.message}</p>}
+      <div className="font-display text-[10px] uppercase tracking-widest text-muted-foreground/80">
+        Area: {alert.areaDescription}
+      </div>
+    </article>
+  );
+}
+
 
 /* ---------------- Cards ---------------- */
 
