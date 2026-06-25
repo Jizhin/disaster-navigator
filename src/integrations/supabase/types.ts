@@ -20,7 +20,11 @@ export type Database = {
           created_at: string
           district: string
           id: string
+          image_url: string | null
+          lat: number | null
+          lon: number | null
           message: string
+          place: string | null
           severity: Database["public"]["Enums"]["report_severity"]
         }
         Insert: {
@@ -28,7 +32,11 @@ export type Database = {
           created_at?: string
           district: string
           id?: string
+          image_url?: string | null
+          lat?: number | null
+          lon?: number | null
           message: string
+          place?: string | null
           severity?: Database["public"]["Enums"]["report_severity"]
         }
         Update: {
@@ -36,7 +44,11 @@ export type Database = {
           created_at?: string
           district?: string
           id?: string
+          image_url?: string | null
+          lat?: number | null
+          lon?: number | null
           message?: string
+          place?: string | null
           severity?: Database["public"]["Enums"]["report_severity"]
         }
         Relationships: []
