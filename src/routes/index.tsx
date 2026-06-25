@@ -139,6 +139,9 @@ function Home() {
   const time = useLocalTime();
   const tickerItems = [...WEATHER, ...WEATHER];
   const { reports, status } = useLiveReports(20);
+  const [reportOpen, setReportOpen] = useState(false);
+
+
 
 
   return (
@@ -209,7 +212,11 @@ function Home() {
 
             {/* Actions */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <button className="flex flex-col items-start p-6 bg-surface border border-warn/30 hover:border-warn transition-all text-left group">
+              <button
+                type="button"
+                onClick={() => setReportOpen(true)}
+                className="flex flex-col items-start p-6 bg-surface border border-warn/30 hover:border-warn transition-all text-left group"
+              >
                 <div className="w-10 h-10 rounded-full bg-warn/20 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
                   <div className="w-4 h-4 bg-warn rotate-45" />
                 </div>
@@ -220,6 +227,7 @@ function Home() {
                   Floods, landslides, road damage, power failures, or risks.
                 </span>
               </button>
+
 
               <button className="flex flex-col items-start p-6 bg-surface border border-primary/30 hover:border-primary transition-all text-left group">
                 <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
@@ -341,6 +349,167 @@ function Home() {
           Community-powered · Built for Kerala
         </footer>
       </div>
+      {reportOpen && <ReportAlertModal onClose={() => setReportOpen(false)} />}
+    </div>
+  );
+}
+
+function ReportAlertModal({ onClose }: { onClose: () => void }) {
+  const [district, setDistrict] = useState(DISTRICTS[0].name);
+  const [severity, setSeverity] = useState<Severity>("warn");
+  const [category, setCategory] = useState("Flood");
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = message.trim();
+    if (trimmed.length < 1 || trimmed.length > 500) {
+      setError("Message must be 1–500 characters.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    const { error: insertError } = await supabase.from("reports").insert({
+      district,
+      message: trimmed,
+      severity,
+      category,
+    });
+    setSubmitting(false);
+    if (insertError) {
+      setError(insertError.message);
+      return;
+    }
+    onClose();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <form
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={submit}
+        className="w-full max-w-lg bg-surface border border-warn/40 p-6 space-y-5"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="font-display text-[10px] uppercase tracking-widest text-warn font-bold mb-1">
+              New Report
+            </div>
+            <h2 className="font-display text-xl font-bold uppercase tracking-tight">
+              Report Alert
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="font-display text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground"
+          >
+            Close ✕
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <label className="space-y-2">
+            <span className="font-display block text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
+              District
+            </span>
+            <select
+              value={district}
+              onChange={(e) => setDistrict(e.target.value)}
+              className="w-full bg-background border border-surface focus:border-primary px-3 py-2 text-sm outline-none"
+            >
+              {DISTRICTS.map((d) => (
+                <option key={d.code} value={d.name}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="space-y-2">
+            <span className="font-display block text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
+              Category
+            </span>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full bg-background border border-surface focus:border-primary px-3 py-2 text-sm outline-none"
+            >
+              {["Flood", "Landslide", "Road Damage", "Power", "Medical", "Other"].map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="space-y-2">
+          <span className="font-display block text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
+            Severity
+          </span>
+          <div className="grid grid-cols-3 gap-2">
+            {(["safe", "warn", "critical"] as Severity[]).map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setSeverity(s)}
+                className={`font-display text-xs uppercase tracking-widest font-bold py-2 border transition-colors ${
+                  severity === s
+                    ? s === "critical"
+                      ? "border-critical bg-critical/20 text-critical"
+                      : s === "warn"
+                        ? "border-warn bg-warn/20 text-warn"
+                        : "border-primary bg-primary/20 text-primary"
+                    : "border-surface text-muted-foreground hover:border-foreground/40"
+                }`}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <label className="block space-y-2">
+          <span className="font-display block text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
+            What happened?
+          </span>
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            rows={4}
+            maxLength={500}
+            placeholder="Brief description (location, what you saw, any risk)..."
+            className="w-full bg-background border border-surface focus:border-primary px-3 py-2 text-sm outline-none resize-none placeholder:text-muted-foreground/60"
+          />
+          <div className="flex justify-between text-[10px] font-display uppercase tracking-widest text-muted-foreground">
+            <span>{error ?? "Visible publicly on the live feed"}</span>
+            <span>{message.length}/500</span>
+          </div>
+        </label>
+
+        <div className="flex justify-end gap-3 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="font-display text-xs uppercase tracking-widest px-4 py-2 border border-surface hover:border-foreground/40"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="font-display text-xs uppercase tracking-widest font-bold px-4 py-2 bg-warn text-background hover:bg-warn/90 disabled:opacity-50"
+          >
+            {submitting ? "Submitting..." : "Submit Report"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -354,6 +523,7 @@ function Stat({
   label: string;
   tone: "warn" | "primary" | "muted";
 }) {
+
   const color =
     tone === "warn" ? "text-warn" : tone === "primary" ? "text-primary" : "text-foreground/40";
   return (
