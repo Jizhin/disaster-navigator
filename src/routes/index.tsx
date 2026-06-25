@@ -529,11 +529,40 @@ function Home() {
                 Kerala Overview
               </h3>
               <div className="grid grid-cols-2 gap-6">
-                <Stat value={String(reports.filter((r) => r.severity !== "safe").length)} label="Active Alerts" tone="warn" />
-                <Stat value={String(reports.filter((r) => r.severity === "safe").length)} label="Safe Pings" tone="primary" />
-                <Stat value="2.4k" label="Contributors" tone="muted" />
-                <Stat value="0" label="Fatalities" tone="muted" />
+                <Stat
+                  value={String(alerts.filter((a) => a.severity !== "safe").length)}
+                  label="Official Alerts"
+                  tone="warn"
+                />
+                <Stat
+                  value={String(reports.length)}
+                  label="Crowd Reports"
+                  tone="primary"
+                />
+                <Stat
+                  value={String(
+                    new Set([
+                      ...alerts.map((a) => a.district).filter(Boolean),
+                      ...reports.map((r) => r.district),
+                    ]).size,
+                  )}
+                  label="Districts Active"
+                  tone="warn"
+                />
+                <Stat
+                  value={String(
+                    new Set(
+                      [
+                        ...alerts.filter((a) => a.severity === "critical").map((a) => a.district),
+                        ...reports.filter((r) => r.severity === "critical").map((r) => r.district),
+                      ].filter(Boolean),
+                    ).size,
+                  )}
+                  label="Critical Zones"
+                  tone="muted"
+                />
               </div>
+
             </div>
 
             <div className="bg-surface flex flex-col h-[400px]">
