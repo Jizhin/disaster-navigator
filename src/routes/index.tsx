@@ -262,16 +262,34 @@ function Home() {
             </div>
 
             <div className="bg-surface flex flex-col h-[400px]">
-              <div className="p-4 border-b border-background/40 flex justify-between items-center">
+              <div className="p-4 border-b border-background/40 flex justify-between items-center gap-2">
                 <h3 className="font-display text-xs font-bold uppercase tracking-widest">
                   Live Reports
                 </h3>
-                <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                <div className="flex items-center gap-2 font-display text-[10px] uppercase tracking-widest text-muted-foreground">
+                  <span>
+                    {status === "live" ? "Live" : status === "connecting" ? "Connecting" : "Offline"}
+                  </span>
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      status === "live"
+                        ? "bg-primary animate-pulse"
+                        : status === "connecting"
+                          ? "bg-warn animate-pulse"
+                          : "bg-critical"
+                    }`}
+                  />
+                </div>
               </div>
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {REPORTS.map((r, i) => (
+                {reports.length === 0 && status !== "connecting" && (
+                  <div className="text-center py-8 text-muted-foreground/60 italic text-xs">
+                    No recent reports
+                  </div>
+                )}
+                {reports.map((r) => (
                   <div
-                    key={i}
+                    key={r.id}
                     className={`border-l-2 pl-3 py-1 ${
                       r.severity === "critical"
                         ? "border-critical"
@@ -281,14 +299,11 @@ function Home() {
                     }`}
                   >
                     <div className="font-display text-xs text-muted-foreground mb-1">
-                      {r.district} • {r.time}
+                      {r.district} • {formatReportTime(r.created_at)}
                     </div>
                     <div className="text-sm font-semibold">{r.message}</div>
                   </div>
                 ))}
-                <div className="text-center py-6 text-muted-foreground/40 italic text-xs">
-                  End of recent reports
-                </div>
               </div>
             </div>
           </div>
