@@ -21,12 +21,9 @@ type Severity = "safe" | "warn" | "critical";
 type District = {
   code: string;
   name: string;
-  severity: Severity;
-  load: number;
   lat: number;
   lon: number;
 };
-type WeatherItem = { name: string; condition: string; temp: number; severity: Severity };
 type Report = {
   id: string;
   district: string;
