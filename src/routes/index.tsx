@@ -61,35 +61,34 @@ type Place = {
 };
 
 const DISTRICTS: District[] = [
-  { code: "KL-01", name: "Trivandrum", severity: "safe", load: 0.75, lat: 8.5241, lon: 76.9366 },
-  { code: "KL-02", name: "Kollam", severity: "safe", load: 1, lat: 8.8932, lon: 76.6141 },
-  { code: "KL-03", name: "Pathanamthitta", severity: "warn", load: 0.33, lat: 9.2648, lon: 76.787 },
-  { code: "KL-04", name: "Alappuzha", severity: "safe", load: 0.83, lat: 9.4981, lon: 76.3388 },
-  { code: "KL-05", name: "Kottayam", severity: "safe", load: 0.66, lat: 9.5916, lon: 76.5222 },
-  { code: "KL-06", name: "Idukki", severity: "critical", load: 0.5, lat: 9.85, lon: 76.97 },
-  { code: "KL-07", name: "Ernakulam", severity: "warn", load: 0.25, lat: 9.9816, lon: 76.2999 },
-  { code: "KL-08", name: "Thrissur", severity: "safe", load: 0.5, lat: 10.5276, lon: 76.2144 },
-  { code: "KL-09", name: "Palakkad", severity: "warn", load: 0.75, lat: 10.7867, lon: 76.6548 },
-  { code: "KL-10", name: "Malappuram", severity: "safe", load: 1, lat: 11.041, lon: 76.0788 },
-  { code: "KL-11", name: "Kozhikode", severity: "warn", load: 0.2, lat: 11.2588, lon: 75.7804 },
-  { code: "KL-12", name: "Wayanad", severity: "critical", load: 1, lat: 11.6854, lon: 76.132 },
-  { code: "KL-13", name: "Kannur", severity: "safe", load: 1, lat: 11.8745, lon: 75.3704 },
-  { code: "KL-14", name: "Kasaragod", severity: "safe", load: 1, lat: 12.4996, lon: 74.9869 },
+  { code: "KL-01", name: "Trivandrum", lat: 8.5241, lon: 76.9366 },
+  { code: "KL-02", name: "Kollam", lat: 8.8932, lon: 76.6141 },
+  { code: "KL-03", name: "Pathanamthitta", lat: 9.2648, lon: 76.787 },
+  { code: "KL-04", name: "Alappuzha", lat: 9.4981, lon: 76.3388 },
+  { code: "KL-05", name: "Kottayam", lat: 9.5916, lon: 76.5222 },
+  { code: "KL-06", name: "Idukki", lat: 9.85, lon: 76.97 },
+  { code: "KL-07", name: "Ernakulam", lat: 9.9816, lon: 76.2999 },
+  { code: "KL-08", name: "Thrissur", lat: 10.5276, lon: 76.2144 },
+  { code: "KL-09", name: "Palakkad", lat: 10.7867, lon: 76.6548 },
+  { code: "KL-10", name: "Malappuram", lat: 11.041, lon: 76.0788 },
+  { code: "KL-11", name: "Kozhikode", lat: 11.2588, lon: 75.7804 },
+  { code: "KL-12", name: "Wayanad", lat: 11.6854, lon: 76.132 },
+  { code: "KL-13", name: "Kannur", lat: 11.8745, lon: 75.3704 },
+  { code: "KL-14", name: "Kasaragod", lat: 12.4996, lon: 74.9869 },
 ];
 
 const KERALA_CENTER = { lat: 10.5, lon: 76.3 };
 
-const WEATHER: WeatherItem[] = [
-  { name: "Idukki", condition: "Thunderstorm warning", temp: 25, severity: "warn" },
-  { name: "Kollam", condition: "Drizzle likely", temp: 29, severity: "safe" },
-  { name: "Kottayam", condition: "Clear", temp: 31, severity: "safe" },
-  { name: "Wayanad", condition: "Heavy rain alert", temp: 22, severity: "critical" },
-  { name: "Palakkad", condition: "Heat advisory", temp: 36, severity: "warn" },
-  { name: "Ernakulam", condition: "Overcast", temp: 29, severity: "safe" },
-  { name: "Thrissur", condition: "Thunderstorm warning", temp: 30, severity: "warn" },
-  { name: "Kannur", condition: "Rain showers", temp: 29, severity: "safe" },
-  { name: "Kasaragod", condition: "Rain showers", temp: 29, severity: "safe" },
-];
+const SEVERITY_RANK: Record<Severity, number> = { safe: 0, warn: 1, critical: 2 };
+
+function maxSeverity(items: Array<{ severity: Severity }>): Severity {
+  let best: Severity = "safe";
+  for (const it of items) {
+    if (SEVERITY_RANK[it.severity] > SEVERITY_RANK[best]) best = it.severity;
+  }
+  return best;
+}
+
 
 /* ---------------- helpers ---------------- */
 
