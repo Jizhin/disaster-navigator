@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -18,7 +19,7 @@ export const Route = createFileRoute("/")({
 type Severity = "safe" | "warn" | "critical";
 type District = { code: string; name: string; severity: Severity; load: number };
 type WeatherItem = { name: string; condition: string; temp: number; severity: Severity };
-type Report = { district: string; time: string; message: string; severity: Severity };
+type Report = { id: string; district: string; created_at: string; message: string; severity: Severity };
 
 const DISTRICTS: District[] = [
   { code: "KL-01", name: "Trivandrum", severity: "safe", load: 0.75 },
@@ -49,12 +50,69 @@ const WEATHER: WeatherItem[] = [
   { name: "Kasaragod", condition: "Rain showers", temp: 29, severity: "safe" },
 ];
 
-const REPORTS: Report[] = [
-  { district: "Kochi", time: "14:15", message: "Minor waterlogging on MG Road.", severity: "warn" },
-  { district: "Thrissur", time: "14:02", message: "Main Highway cleared of debris.", severity: "safe" },
-  { district: "Alappuzha", time: "13:45", message: "Ferry services suspended temporarily.", severity: "safe" },
-  { district: "Idukki", time: "13:20", message: "Hairline fissures reported on Munnar Gap Road.", severity: "critical" },
-];
+function useLiveReports(limit = 20) {
+  const [reports, setReports] = useState<Report[]>([]);
+  const [status, setStatus] = useState<"connecting" | "live" | "offline">("connecting");
+
+  useEffect(() => {
+    let active = true;
+
+    supabase
+      .from("reports")
+      .select("id, district, message, severity, created_at")
+      .order("created_at", { ascending: false })
+      .limit(limit)
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) {
+          console.error("[reports] initial load failed", error);
+          setStatus("offline");
+          return;
+        }
+        setReports((data ?? []) as Report[]);
+      });
+
+    const channel = supabase
+      .channel("reports-feed")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "reports" },
+        (payload) => {
+          const next = payload.new as Report;
+          setReports((prev) => [next, ...prev].slice(0, limit));
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "reports" },
+        (payload) => {
+          const removed = payload.old as { id?: string };
+          if (!removed?.id) return;
+          setReports((prev) => prev.filter((r) => r.id !== removed.id));
+        },
+      )
+      .subscribe((s) => {
+        if (s === "SUBSCRIBED") setStatus("live");
+        else if (s === "CHANNEL_ERROR" || s === "TIMED_OUT" || s === "CLOSED") setStatus("offline");
+      });
+
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
+  }, [limit]);
+
+  return { reports, status };
+}
+
+function formatReportTime(iso: string) {
+  const d = new Date(iso);
+  const diffSec = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+  if (diffSec < 60) return "just now";
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+  return d.toLocaleString("en-IN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short" });
+}
 
 const severityColor = (s: Severity) =>
   s === "critical" ? "bg-critical" : s === "warn" ? "bg-warn" : "bg-primary";
@@ -80,6 +138,8 @@ function useLocalTime() {
 function Home() {
   const time = useLocalTime();
   const tickerItems = [...WEATHER, ...WEATHER];
+  const { reports, status } = useLiveReports(20);
+
 
   return (
     <div className="min-h-screen w-full bg-background text-foreground p-4 md:p-8">
@@ -202,16 +262,34 @@ function Home() {
             </div>
 
             <div className="bg-surface flex flex-col h-[400px]">
-              <div className="p-4 border-b border-background/40 flex justify-between items-center">
+              <div className="p-4 border-b border-background/40 flex justify-between items-center gap-2">
                 <h3 className="font-display text-xs font-bold uppercase tracking-widest">
                   Live Reports
                 </h3>
-                <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                <div className="flex items-center gap-2 font-display text-[10px] uppercase tracking-widest text-muted-foreground">
+                  <span>
+                    {status === "live" ? "Live" : status === "connecting" ? "Connecting" : "Offline"}
+                  </span>
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      status === "live"
+                        ? "bg-primary animate-pulse"
+                        : status === "connecting"
+                          ? "bg-warn animate-pulse"
+                          : "bg-critical"
+                    }`}
+                  />
+                </div>
               </div>
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {REPORTS.map((r, i) => (
+                {reports.length === 0 && status !== "connecting" && (
+                  <div className="text-center py-8 text-muted-foreground/60 italic text-xs">
+                    No recent reports
+                  </div>
+                )}
+                {reports.map((r) => (
                   <div
-                    key={i}
+                    key={r.id}
                     className={`border-l-2 pl-3 py-1 ${
                       r.severity === "critical"
                         ? "border-critical"
@@ -221,14 +299,11 @@ function Home() {
                     }`}
                   >
                     <div className="font-display text-xs text-muted-foreground mb-1">
-                      {r.district} • {r.time}
+                      {r.district} • {formatReportTime(r.created_at)}
                     </div>
                     <div className="text-sm font-semibold">{r.message}</div>
                   </div>
                 ))}
-                <div className="text-center py-6 text-muted-foreground/40 italic text-xs">
-                  End of recent reports
-                </div>
               </div>
             </div>
           </div>
