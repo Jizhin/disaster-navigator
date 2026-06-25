@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/")({
@@ -17,26 +17,69 @@ export const Route = createFileRoute("/")({
 });
 
 type Severity = "safe" | "warn" | "critical";
-type District = { code: string; name: string; severity: Severity; load: number };
+type District = {
+  code: string;
+  name: string;
+  severity: Severity;
+  load: number;
+  lat: number;
+  lon: number;
+};
 type WeatherItem = { name: string; condition: string; temp: number; severity: Severity };
-type Report = { id: string; district: string; created_at: string; message: string; severity: Severity };
+type Report = {
+  id: string;
+  district: string;
+  place: string | null;
+  lat: number | null;
+  lon: number | null;
+  created_at: string;
+  message: string;
+  severity: Severity;
+  category: string | null;
+  image_url: string | null;
+};
+
+type PhotonFeature = {
+  geometry: { coordinates: [number, number] };
+  properties: {
+    name?: string;
+    city?: string;
+    county?: string;
+    state?: string;
+    country?: string;
+    type?: string;
+    osm_key?: string;
+    osm_value?: string;
+    district?: string;
+  };
+};
+
+type Place = {
+  name: string;
+  context: string;
+  lat: number;
+  lon: number;
+  district: string;
+};
 
 const DISTRICTS: District[] = [
-  { code: "KL-01", name: "Trivandrum", severity: "safe", load: 0.75 },
-  { code: "KL-02", name: "Kollam", severity: "safe", load: 1 },
-  { code: "KL-03", name: "P'thitta", severity: "warn", load: 0.33 },
-  { code: "KL-04", name: "Alappuzha", severity: "safe", load: 0.83 },
-  { code: "KL-05", name: "Kottayam", severity: "safe", load: 0.66 },
-  { code: "KL-06", name: "Idukki", severity: "critical", load: 0.5 },
-  { code: "KL-07", name: "Ernakulam", severity: "warn", load: 0.25 },
-  { code: "KL-08", name: "Thrissur", severity: "safe", load: 0.5 },
-  { code: "KL-09", name: "Palakkad", severity: "warn", load: 0.75 },
-  { code: "KL-10", name: "Malappuram", severity: "safe", load: 1 },
-  { code: "KL-11", name: "Kozhikode", severity: "warn", load: 0.2 },
-  { code: "KL-12", name: "Wayanad", severity: "critical", load: 1 },
-  { code: "KL-13", name: "Kannur", severity: "safe", load: 1 },
-  { code: "KL-14", name: "Kasaragod", severity: "safe", load: 1 },
+  { code: "KL-01", name: "Trivandrum", severity: "safe", load: 0.75, lat: 8.5241, lon: 76.9366 },
+  { code: "KL-02", name: "Kollam", severity: "safe", load: 1, lat: 8.8932, lon: 76.6141 },
+  { code: "KL-03", name: "Pathanamthitta", severity: "warn", load: 0.33, lat: 9.2648, lon: 76.787 },
+  { code: "KL-04", name: "Alappuzha", severity: "safe", load: 0.83, lat: 9.4981, lon: 76.3388 },
+  { code: "KL-05", name: "Kottayam", severity: "safe", load: 0.66, lat: 9.5916, lon: 76.5222 },
+  { code: "KL-06", name: "Idukki", severity: "critical", load: 0.5, lat: 9.85, lon: 76.97 },
+  { code: "KL-07", name: "Ernakulam", severity: "warn", load: 0.25, lat: 9.9816, lon: 76.2999 },
+  { code: "KL-08", name: "Thrissur", severity: "safe", load: 0.5, lat: 10.5276, lon: 76.2144 },
+  { code: "KL-09", name: "Palakkad", severity: "warn", load: 0.75, lat: 10.7867, lon: 76.6548 },
+  { code: "KL-10", name: "Malappuram", severity: "safe", load: 1, lat: 11.041, lon: 76.0788 },
+  { code: "KL-11", name: "Kozhikode", severity: "warn", load: 0.2, lat: 11.2588, lon: 75.7804 },
+  { code: "KL-12", name: "Wayanad", severity: "critical", load: 1, lat: 11.6854, lon: 76.132 },
+  { code: "KL-13", name: "Kannur", severity: "safe", load: 1, lat: 11.8745, lon: 75.3704 },
+  { code: "KL-14", name: "Kasaragod", severity: "safe", load: 1, lat: 12.4996, lon: 74.9869 },
 ];
+
+const KERALA_CENTER = { lat: 10.5, lon: 76.3 };
 
 const WEATHER: WeatherItem[] = [
   { name: "Idukki", condition: "Thunderstorm warning", temp: 25, severity: "warn" },
@@ -50,16 +93,124 @@ const WEATHER: WeatherItem[] = [
   { name: "Kasaragod", condition: "Rain showers", temp: 29, severity: "safe" },
 ];
 
+/* ---------------- helpers ---------------- */
+
+function haversine(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
+  const R = 6371;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLon = ((b.lon - a.lon) * Math.PI) / 180;
+  const la1 = (a.lat * Math.PI) / 180;
+  const la2 = (b.lat * Math.PI) / 180;
+  const h =
+    Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function resolveDistrict(f: PhotonFeature): string {
+  const p = f.properties;
+  const candidates = [p.district, p.county, p.city, p.state].filter(Boolean) as string[];
+  for (const c of candidates) {
+    const hit = DISTRICTS.find(
+      (d) =>
+        c.toLowerCase().includes(d.name.toLowerCase()) ||
+        d.name.toLowerCase().includes(c.toLowerCase()),
+    );
+    if (hit) return hit.name;
+  }
+  const [lon, lat] = f.geometry.coordinates;
+  let best = DISTRICTS[0];
+  let bestDist = Infinity;
+  for (const d of DISTRICTS) {
+    const dist = haversine({ lat, lon }, d);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = d;
+    }
+  }
+  return best.name;
+}
+
+function toPlace(f: PhotonFeature): Place {
+  const p = f.properties;
+  const [lon, lat] = f.geometry.coordinates;
+  const district = resolveDistrict(f);
+  const ctxParts = [p.city, p.county, p.state].filter(Boolean) as string[];
+  const context = Array.from(new Set(ctxParts)).join(" · ");
+  return {
+    name: p.name ?? "Unknown",
+    context: context || "Kerala, India",
+    lat,
+    lon,
+    district,
+  };
+}
+
+function usePhotonSearch(query: string) {
+  const [results, setResults] = useState<Place[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      setResults([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const ctrl = new AbortController();
+    const id = setTimeout(() => {
+      const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(
+        q,
+      )}&lat=${KERALA_CENTER.lat}&lon=${KERALA_CENTER.lon}&limit=8`;
+      fetch(url, { signal: ctrl.signal })
+        .then((r) => r.json())
+        .then((data: { features: PhotonFeature[] }) => {
+          const features = (data.features ?? []).filter((f) => {
+            const s = (f.properties.state ?? "").toLowerCase();
+            const c = (f.properties.country ?? "").toLowerCase();
+            return s.includes("kerala") || (c.includes("india") && s === "");
+          });
+          setResults(features.map(toPlace));
+        })
+        .catch((e) => {
+          if (e.name !== "AbortError") console.error(e);
+        })
+        .finally(() => setLoading(false));
+    }, 250);
+    return () => {
+      ctrl.abort();
+      clearTimeout(id);
+    };
+  }, [query]);
+
+  return { results, loading };
+}
+
+async function reverseGeocode(lat: number, lon: number): Promise<Place | null> {
+  try {
+    const res = await fetch(
+      `https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}&limit=1`,
+    );
+    const data: { features: PhotonFeature[] } = await res.json();
+    const f = data.features?.[0];
+    if (!f) return null;
+    return toPlace(f);
+  } catch {
+    return null;
+  }
+}
+
 function useLiveReports(limit = 20) {
   const [reports, setReports] = useState<Report[]>([]);
   const [status, setStatus] = useState<"connecting" | "live" | "offline">("connecting");
+  const [flashId, setFlashId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
 
     supabase
       .from("reports")
-      .select("id, district, message, severity, created_at")
+      .select("id, district, place, lat, lon, message, severity, category, image_url, created_at")
       .order("created_at", { ascending: false })
       .limit(limit)
       .then(({ data, error }) => {
@@ -80,6 +231,8 @@ function useLiveReports(limit = 20) {
         (payload) => {
           const next = payload.new as Report;
           setReports((prev) => [next, ...prev].slice(0, limit));
+          setFlashId(next.id);
+          setTimeout(() => setFlashId((id) => (id === next.id ? null : id)), 4000);
         },
       )
       .on(
@@ -102,7 +255,7 @@ function useLiveReports(limit = 20) {
     };
   }, [limit]);
 
-  return { reports, status };
+  return { reports, status, flashId };
 }
 
 function formatReportTime(iso: string) {
@@ -120,6 +273,9 @@ const severityColor = (s: Severity) =>
 const severityText = (s: Severity) =>
   s === "critical" ? "text-critical" : s === "warn" ? "text-warn" : "text-primary";
 
+const severityBorder = (s: Severity) =>
+  s === "critical" ? "border-critical" : s === "warn" ? "border-warn" : "border-primary";
+
 function useLocalTime() {
   const [time, setTime] = useState("");
   useEffect(() => {
@@ -135,14 +291,47 @@ function useLocalTime() {
   return time;
 }
 
+/* signed-url cache for private bucket images */
+function useSignedImage(pathOrUrl: string | null) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!pathOrUrl) {
+      setUrl(null);
+      return;
+    }
+    if (pathOrUrl.startsWith("http")) {
+      setUrl(pathOrUrl);
+      return;
+    }
+    let active = true;
+    supabase.storage
+      .from("report-images")
+      .createSignedUrl(pathOrUrl, 60 * 60)
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) {
+          console.error(error);
+          return;
+        }
+        setUrl(data?.signedUrl ?? null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [pathOrUrl]);
+  return url;
+}
+
+/* ---------------- main page ---------------- */
+
 function Home() {
   const time = useLocalTime();
   const tickerItems = [...WEATHER, ...WEATHER];
-  const { reports, status } = useLiveReports(20);
+  const { reports, status, flashId } = useLiveReports(40);
+
+  const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
-
-
-
+  const [districtFocus, setDistrictFocus] = useState<string | null>(null);
 
   return (
     <div className="min-h-screen w-full bg-background text-foreground p-4 md:p-8">
@@ -188,7 +377,7 @@ function Home() {
 
         {/* Main Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left: Featured + Actions */}
+          {/* Left: Featured + Location + Action */}
           <div className="lg:col-span-8 space-y-6">
             {/* Critical Lede */}
             <article className="relative bg-critical/10 border-l-4 border-critical p-6">
@@ -210,48 +399,40 @@ function Home() {
               </button>
             </article>
 
-            {/* Actions */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <button
-                type="button"
-                onClick={() => setReportOpen(true)}
-                className="flex flex-col items-start p-6 bg-surface border border-warn/30 hover:border-warn transition-all text-left group"
-              >
-                <div className="w-10 h-10 rounded-full bg-warn/20 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                  <div className="w-4 h-4 bg-warn rotate-45" />
-                </div>
-                <span className="font-display text-xl font-bold mb-1 uppercase tracking-tight">
-                  Report Alert
-                </span>
-                <span className="text-sm text-muted-foreground">
-                  Floods, landslides, road damage, power failures, or risks.
-                </span>
-              </button>
+            {/* Location picker + Report action */}
+            <div className="bg-surface p-6 space-y-5">
+              <div>
+                <label className="font-display block text-[10px] uppercase tracking-widest text-muted-foreground mb-3 font-bold">
+                  Step 1 · Choose Your Location
+                </label>
+                <LocationPicker selected={selectedPlace} onSelect={setSelectedPlace} />
+              </div>
 
-
-              <button className="flex flex-col items-start p-6 bg-surface border border-primary/30 hover:border-primary transition-all text-left group">
-                <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                  <div className="w-4 h-4 border-2 border-primary rounded-sm" />
-                </div>
-                <span className="font-display text-xl font-bold mb-1 uppercase tracking-tight">
-                  Mark Safe
-                </span>
-                <span className="text-sm text-muted-foreground">
-                  Confirm an area is safe or a previous report resolved.
-                </span>
-              </button>
-            </div>
-
-            {/* Location search */}
-            <div className="bg-surface p-6">
-              <label className="font-display block text-[10px] uppercase tracking-widest text-muted-foreground mb-3 font-bold">
-                Choose Your Location
-              </label>
-              <input
-                type="text"
-                placeholder="Search your place (e.g. Payyannur, Maniyara...)"
-                className="w-full bg-background border border-surface focus:border-primary px-4 py-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/60"
-              />
+              <div className="grid grid-cols-1">
+                <button
+                  type="button"
+                  disabled={!selectedPlace}
+                  onClick={() => setReportOpen(true)}
+                  className="flex flex-col items-start p-6 bg-background border border-warn/30 enabled:hover:border-warn transition-all text-left group disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <div className="flex items-center justify-between w-full mb-4">
+                    <div className="w-10 h-10 rounded-full bg-warn/20 flex items-center justify-center group-enabled:group-hover:scale-110 transition-transform">
+                      <div className="w-4 h-4 bg-warn rotate-45" />
+                    </div>
+                    <span className="font-display text-[10px] uppercase tracking-widest text-muted-foreground">
+                      Step 2
+                    </span>
+                  </div>
+                  <span className="font-display text-xl font-bold mb-1 uppercase tracking-tight">
+                    Report Alert
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    {selectedPlace
+                      ? `Submit a report for ${selectedPlace.name}, ${selectedPlace.district}.`
+                      : "Pick a location above to enable reporting."}
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -262,8 +443,8 @@ function Home() {
                 Kerala Overview
               </h3>
               <div className="grid grid-cols-2 gap-6">
-                <Stat value="12" label="Active Alerts" tone="warn" />
-                <Stat value="142" label="Safe Points" tone="primary" />
+                <Stat value={String(reports.filter((r) => r.severity !== "safe").length)} label="Active Alerts" tone="warn" />
+                <Stat value={String(reports.filter((r) => r.severity === "safe").length)} label="Safe Pings" tone="primary" />
                 <Stat value="2.4k" label="Contributors" tone="muted" />
                 <Stat value="0" label="Fatalities" tone="muted" />
               </div>
@@ -295,22 +476,8 @@ function Home() {
                     No recent reports
                   </div>
                 )}
-                {reports.map((r) => (
-                  <div
-                    key={r.id}
-                    className={`border-l-2 pl-3 py-1 ${
-                      r.severity === "critical"
-                        ? "border-critical"
-                        : r.severity === "warn"
-                          ? "border-warn"
-                          : "border-primary"
-                    }`}
-                  >
-                    <div className="font-display text-xs text-muted-foreground mb-1">
-                      {r.district} • {formatReportTime(r.created_at)}
-                    </div>
-                    <div className="text-sm font-semibold">{r.message}</div>
-                  </div>
+                {reports.slice(0, 20).map((r) => (
+                  <FeedRow key={r.id} report={r} flash={flashId === r.id} />
                 ))}
               </div>
             </div>
@@ -320,28 +487,36 @@ function Home() {
         {/* District Grid */}
         <section className="space-y-4 pt-8 border-t border-surface">
           <h3 className="font-display text-xs font-bold uppercase tracking-widest text-muted-foreground">
-            All Districts
+            All Districts · Tap to inspect
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-px bg-surface border border-surface">
-            {DISTRICTS.map((d) => (
-              <button
-                key={d.code}
-                className="bg-background p-4 hover:bg-surface transition-colors text-left"
-              >
-                <div className="font-display text-[10px] uppercase text-muted-foreground mb-2 font-bold">
-                  {d.code}
-                </div>
-                <div className="font-display text-sm font-bold uppercase tracking-tight">
-                  {d.name}
-                </div>
-                <div className="mt-4 h-1 w-full bg-foreground/5 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full ${severityColor(d.severity)} ${d.severity === "critical" ? "animate-pulse" : ""}`}
-                    style={{ width: `${Math.max(8, d.load * 100)}%` }}
-                  />
-                </div>
-              </button>
-            ))}
+            {DISTRICTS.map((d) => {
+              const count = reports.filter((r) => r.district === d.name).length;
+              return (
+                <button
+                  key={d.code}
+                  type="button"
+                  onClick={() => setDistrictFocus(d.name)}
+                  className="bg-background p-4 hover:bg-surface transition-colors text-left relative"
+                >
+                  <div className="font-display text-[10px] uppercase text-muted-foreground mb-2 font-bold flex justify-between">
+                    <span>{d.code}</span>
+                    {count > 0 && (
+                      <span className="text-warn">{count}</span>
+                    )}
+                  </div>
+                  <div className="font-display text-sm font-bold uppercase tracking-tight">
+                    {d.name}
+                  </div>
+                  <div className="mt-4 h-1 w-full bg-foreground/5 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full ${severityColor(d.severity)} ${d.severity === "critical" ? "animate-pulse" : ""}`}
+                      style={{ width: `${Math.max(8, d.load * 100)}%` }}
+                    />
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </section>
 
@@ -349,18 +524,187 @@ function Home() {
           Community-powered · Built for Kerala
         </footer>
       </div>
-      {reportOpen && <ReportAlertModal onClose={() => setReportOpen(false)} />}
+
+      {reportOpen && selectedPlace && (
+        <ReportAlertModal
+          place={selectedPlace}
+          onClose={() => setReportOpen(false)}
+          onSubmitted={() => setReportOpen(false)}
+        />
+      )}
+
+      {districtFocus && (
+        <DistrictModal
+          district={districtFocus}
+          reports={reports.filter((r) => r.district === districtFocus)}
+          onClose={() => setDistrictFocus(null)}
+        />
+      )}
     </div>
   );
 }
 
-function ReportAlertModal({ onClose }: { onClose: () => void }) {
-  const [district, setDistrict] = useState(DISTRICTS[0].name);
+/* ---------------- Location Picker ---------------- */
+
+function LocationPicker({
+  selected,
+  onSelect,
+}: {
+  selected: Place | null;
+  onSelect: (p: Place | null) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [geoLoading, setGeoLoading] = useState(false);
+  const [geoError, setGeoError] = useState<string | null>(null);
+  const { results, loading } = usePhotonSearch(query);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
+
+  async function detectLocation() {
+    if (!navigator.geolocation) {
+      setGeoError("Geolocation not supported in this browser.");
+      return;
+    }
+    setGeoLoading(true);
+    setGeoError(null);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const place = await reverseGeocode(pos.coords.latitude, pos.coords.longitude);
+        setGeoLoading(false);
+        if (!place) {
+          setGeoError("Couldn't resolve your location.");
+          return;
+        }
+        onSelect(place);
+        setQuery(place.name);
+      },
+      (err) => {
+        setGeoLoading(false);
+        setGeoError(err.message || "Location permission denied.");
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }
+
+  return (
+    <div ref={boxRef} className="relative space-y-2">
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={query}
+          onFocus={() => setOpen(true)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+            if (selected) onSelect(null);
+          }}
+          placeholder="Search your place (e.g. Payyannur, Maniyara...)"
+          className="flex-1 bg-background border border-surface focus:border-primary px-4 py-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/60"
+        />
+        <button
+          type="button"
+          onClick={detectLocation}
+          disabled={geoLoading}
+          className="font-display text-[10px] uppercase tracking-widest font-bold px-3 py-3 bg-background border border-primary/40 hover:border-primary text-primary disabled:opacity-50"
+          title="Use my location"
+        >
+          {geoLoading ? "..." : "📍 Auto"}
+        </button>
+      </div>
+
+      {selected && (
+        <div className="flex items-center justify-between bg-primary/10 border border-primary/30 px-3 py-2">
+          <div>
+            <div className="font-display text-sm font-bold">{selected.name}</div>
+            <div className="font-display text-[10px] uppercase tracking-widest text-muted-foreground">
+              {selected.district} District · {selected.context}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              onSelect(null);
+              setQuery("");
+            }}
+            className="font-display text-[10px] uppercase text-muted-foreground hover:text-foreground"
+          >
+            Clear ✕
+          </button>
+        </div>
+      )}
+
+      {geoError && (
+        <div className="font-display text-[10px] uppercase tracking-widest text-critical">
+          {geoError}
+        </div>
+      )}
+
+      {open && !selected && (query.trim().length >= 2 || loading) && (
+        <div className="absolute left-0 right-0 top-full mt-1 z-30 bg-background border border-surface max-h-72 overflow-y-auto shadow-xl">
+          {loading && (
+            <div className="px-3 py-2 font-display text-[10px] uppercase tracking-widest text-muted-foreground">
+              Searching...
+            </div>
+          )}
+          {!loading && results.length === 0 && (
+            <div className="px-3 py-2 font-display text-[10px] uppercase tracking-widest text-muted-foreground">
+              No places found in Kerala
+            </div>
+          )}
+          {results.map((p, i) => (
+            <button
+              key={`${p.lat}-${p.lon}-${i}`}
+              type="button"
+              onClick={() => {
+                onSelect(p);
+                setQuery(p.name);
+                setOpen(false);
+              }}
+              className="w-full text-left px-3 py-2 hover:bg-surface border-b border-surface/60 last:border-0"
+            >
+              <div className="text-sm font-semibold">{p.name}</div>
+              <div className="font-display text-[10px] uppercase tracking-widest text-muted-foreground">
+                {p.district} · {p.context}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Report Modal ---------------- */
+
+function ReportAlertModal({
+  place,
+  onClose,
+  onSubmitted,
+}: {
+  place: Place;
+  onClose: () => void;
+  onSubmitted: () => void;
+}) {
   const [severity, setSeverity] = useState<Severity>("warn");
   const [category, setCategory] = useState("Flood");
   const [message, setMessage] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function pickImage(f: File | null) {
+    setImageFile(f);
+    setImagePreview(f ? URL.createObjectURL(f) : null);
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -371,18 +715,44 @@ function ReportAlertModal({ onClose }: { onClose: () => void }) {
     }
     setSubmitting(true);
     setError(null);
+
+    let imagePath: string | null = null;
+    if (imageFile) {
+      if (imageFile.size > 5 * 1024 * 1024) {
+        setSubmitting(false);
+        setError("Image must be under 5 MB.");
+        return;
+      }
+      const ext = imageFile.name.split(".").pop()?.toLowerCase() || "jpg";
+      const filename = `${crypto.randomUUID()}.${ext}`;
+      const path = `${place.district.toLowerCase()}/${filename}`;
+      const { error: upErr } = await supabase.storage
+        .from("report-images")
+        .upload(path, imageFile, { contentType: imageFile.type });
+      if (upErr) {
+        setSubmitting(false);
+        setError(`Image upload failed: ${upErr.message}`);
+        return;
+      }
+      imagePath = path;
+    }
+
     const { error: insertError } = await supabase.from("reports").insert({
-      district,
+      district: place.district,
+      place: place.name,
+      lat: place.lat,
+      lon: place.lon,
       message: trimmed,
       severity,
       category,
+      image_url: imagePath,
     });
     setSubmitting(false);
     if (insertError) {
       setError(insertError.message);
       return;
     }
-    onClose();
+    onSubmitted();
   }
 
   return (
@@ -393,7 +763,7 @@ function ReportAlertModal({ onClose }: { onClose: () => void }) {
       <form
         onClick={(e) => e.stopPropagation()}
         onSubmit={submit}
-        className="w-full max-w-lg bg-surface border border-warn/40 p-6 space-y-5"
+        className="w-full max-w-lg bg-surface border border-warn/40 p-6 space-y-5 max-h-[90vh] overflow-y-auto"
       >
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -401,8 +771,11 @@ function ReportAlertModal({ onClose }: { onClose: () => void }) {
               New Report
             </div>
             <h2 className="font-display text-xl font-bold uppercase tracking-tight">
-              Report Alert
+              {place.name}
             </h2>
+            <div className="font-display text-[10px] uppercase tracking-widest text-muted-foreground mt-1">
+              {place.district} District · {place.context}
+            </div>
           </div>
           <button
             type="button"
@@ -413,24 +786,7 @@ function ReportAlertModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <label className="space-y-2">
-            <span className="font-display block text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
-              District
-            </span>
-            <select
-              value={district}
-              onChange={(e) => setDistrict(e.target.value)}
-              className="w-full bg-background border border-surface focus:border-primary px-3 py-2 text-sm outline-none"
-            >
-              {DISTRICTS.map((d) => (
-                <option key={d.code} value={d.name}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
+        <div className="grid grid-cols-1">
           <label className="space-y-2">
             <span className="font-display block text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
               Category
@@ -440,7 +796,7 @@ function ReportAlertModal({ onClose }: { onClose: () => void }) {
               onChange={(e) => setCategory(e.target.value)}
               className="w-full bg-background border border-surface focus:border-primary px-3 py-2 text-sm outline-none"
             >
-              {["Flood", "Landslide", "Road Damage", "Power", "Medical", "Other"].map((c) => (
+              {["Flood", "Landslide", "Road Damage", "Power", "Medical", "Fire", "Other"].map((c) => (
                 <option key={c} value={c}>
                   {c}
                 </option>
@@ -484,7 +840,7 @@ function ReportAlertModal({ onClose }: { onClose: () => void }) {
             onChange={(e) => setMessage(e.target.value)}
             rows={4}
             maxLength={500}
-            placeholder="Brief description (location, what you saw, any risk)..."
+            placeholder="Brief description (what you saw, any risk, road blocked etc.)..."
             className="w-full bg-background border border-surface focus:border-primary px-3 py-2 text-sm outline-none resize-none placeholder:text-muted-foreground/60"
           />
           <div className="flex justify-between text-[10px] font-display uppercase tracking-widest text-muted-foreground">
@@ -492,6 +848,36 @@ function ReportAlertModal({ onClose }: { onClose: () => void }) {
             <span>{message.length}/500</span>
           </div>
         </label>
+
+        <div className="space-y-2">
+          <span className="font-display block text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
+            Photo (optional, max 5 MB)
+          </span>
+          {imagePreview ? (
+            <div className="relative">
+              <img src={imagePreview} alt="preview" className="w-full max-h-56 object-cover border border-surface" />
+              <button
+                type="button"
+                onClick={() => pickImage(null)}
+                className="absolute top-2 right-2 font-display text-[10px] uppercase tracking-widest font-bold px-2 py-1 bg-background/80 border border-surface hover:border-critical"
+              >
+                Remove
+              </button>
+            </div>
+          ) : (
+            <label className="flex items-center justify-center w-full border border-dashed border-surface hover:border-primary py-6 cursor-pointer text-center">
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => pickImage(e.target.files?.[0] ?? null)}
+              />
+              <span className="font-display text-[10px] uppercase tracking-widest text-muted-foreground">
+                + Attach photo
+              </span>
+            </label>
+          )}
+        </div>
 
         <div className="flex justify-end gap-3 pt-2">
           <button
@@ -514,6 +900,159 @@ function ReportAlertModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+/* ---------------- District Drill-down Modal ---------------- */
+
+function DistrictModal({
+  district,
+  reports,
+  onClose,
+}: {
+  district: string;
+  reports: Report[];
+  onClose: () => void;
+}) {
+  const places = useMemo(() => {
+    const set = new Set<string>();
+    reports.forEach((r) => r.place && set.add(r.place));
+    return Array.from(set);
+  }, [reports]);
+  const [activePlace, setActivePlace] = useState<string | null>(null);
+  const visible = activePlace ? reports.filter((r) => r.place === activePlace) : reports;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-3xl bg-surface border border-primary/30 max-h-[90vh] flex flex-col"
+      >
+        <div className="p-5 border-b border-background/40 flex items-start justify-between gap-4">
+          <div>
+            <div className="font-display text-[10px] uppercase tracking-widest text-primary font-bold mb-1">
+              District Inspect
+            </div>
+            <h2 className="font-display text-xl font-bold uppercase tracking-tight">
+              {district}
+            </h2>
+            <div className="font-display text-[10px] uppercase tracking-widest text-muted-foreground mt-1">
+              {reports.length} live report{reports.length === 1 ? "" : "s"}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="font-display text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground"
+          >
+            Close ✕
+          </button>
+        </div>
+
+        {places.length > 0 && (
+          <div className="flex gap-2 overflow-x-auto px-5 py-3 border-b border-background/40">
+            <button
+              type="button"
+              onClick={() => setActivePlace(null)}
+              className={`shrink-0 font-display text-[10px] uppercase tracking-widest font-bold px-3 py-1.5 border transition-colors ${
+                activePlace === null
+                  ? "border-primary bg-primary/20 text-primary"
+                  : "border-surface text-muted-foreground hover:border-foreground/40"
+              }`}
+            >
+              All places
+            </button>
+            {places.map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setActivePlace(p)}
+                className={`shrink-0 font-display text-[10px] uppercase tracking-widest font-bold px-3 py-1.5 border transition-colors ${
+                  activePlace === p
+                    ? "border-primary bg-primary/20 text-primary"
+                    : "border-surface text-muted-foreground hover:border-foreground/40"
+                }`}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {visible.length === 0 && (
+            <div className="text-center py-12 text-muted-foreground/60 italic text-xs font-display uppercase tracking-widest">
+              No reports yet for {district}
+            </div>
+          )}
+          {visible.map((r) => (
+            <ReportCard key={r.id} report={r} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Cards ---------------- */
+
+function FeedRow({ report, flash }: { report: Report; flash: boolean }) {
+  const img = useSignedImage(report.image_url);
+  return (
+    <div
+      className={`border-l-2 pl-3 py-1 transition-colors ${severityBorder(report.severity)} ${
+        flash ? "bg-warn/10" : ""
+      }`}
+    >
+      <div className="font-display text-xs text-muted-foreground mb-1 flex items-center gap-2">
+        {flash && (
+          <span className="font-display text-[9px] uppercase tracking-widest font-bold bg-warn text-background px-1.5 py-0.5">
+            New
+          </span>
+        )}
+        <span>
+          {report.place ? `${report.place}, ` : ""}
+          {report.district}
+        </span>
+        <span>· {formatReportTime(report.created_at)}</span>
+      </div>
+      <div className="text-sm font-semibold">{report.message}</div>
+      {img && (
+        <img
+          src={img}
+          alt=""
+          className="mt-2 w-full max-h-32 object-cover border border-surface"
+        />
+      )}
+    </div>
+  );
+}
+
+function ReportCard({ report }: { report: Report }) {
+  const img = useSignedImage(report.image_url);
+  return (
+    <article className={`bg-background border-l-4 ${severityBorder(report.severity)} p-4`}>
+      <div className="flex justify-between items-start gap-3 mb-2">
+        <div>
+          <div className="font-display text-[10px] uppercase tracking-widest text-muted-foreground">
+            {report.place ?? report.district} · {report.category ?? "General"}
+          </div>
+          <div className={`font-display text-[10px] uppercase tracking-widest font-bold ${severityText(report.severity)}`}>
+            {report.severity}
+          </div>
+        </div>
+        <span className="font-display text-[10px] uppercase tracking-widest text-muted-foreground">
+          {formatReportTime(report.created_at)}
+        </span>
+      </div>
+      <p className="text-sm">{report.message}</p>
+      {img && (
+        <img src={img} alt="" className="mt-3 w-full max-h-64 object-cover border border-surface" />
+      )}
+    </article>
+  );
+}
+
 function Stat({
   value,
   label,
@@ -523,7 +1062,6 @@ function Stat({
   label: string;
   tone: "warn" | "primary" | "muted";
 }) {
-
   const color =
     tone === "warn" ? "text-warn" : tone === "primary" ? "text-primary" : "text-foreground/40";
   return (
