@@ -5,15 +5,16 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
@@ -36,49 +37,46 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
-  --font-sans: "Work Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", monospace;
 }
 
 :root {
-  --radius: 0.25rem;
+  --radius: 0.125rem;
 
-  /* Monsoon Calm palette */
-  --background: oklch(0.205 0.027 220);   /* #0c1e26 */
-  --foreground: oklch(0.985 0 0);
-  --surface: oklch(0.298 0.034 215);      /* #13343b */
-  --surface-2: oklch(0.255 0.030 218);
+  /* Paper & Ink palette */
+  --background: oklch(0.972 0.008 85);     /* #f5f3ee paper */
+  --foreground: oklch(0.22 0.008 70);      /* #2d2d2d body ink */
+  --surface: oklch(0.928 0.010 80);        /* #e8e4dd surface */
+  --surface-2: oklch(0.895 0.012 78);      /* deeper paper */
+  --ink: oklch(0.18 0.005 60);             /* #0d0d0d hard ink */
 
-  --card: oklch(0.298 0.034 215);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.298 0.034 215);
-  --popover-foreground: oklch(0.985 0 0);
+  --card: oklch(0.972 0.008 85);
+  --card-foreground: oklch(0.22 0.008 70);
+  --popover: oklch(0.972 0.008 85);
+  --popover-foreground: oklch(0.22 0.008 70);
 
-  --primary: oklch(0.76 0.08 195);        /* #5cbdb9 teal */
-  --primary-foreground: oklch(0.18 0.02 220);
-  --secondary: oklch(0.298 0.034 215);
-  --secondary-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.18 0.005 60);                  /* ink-on-paper */
+  --primary-foreground: oklch(0.972 0.008 85);
+  --secondary: oklch(0.928 0.010 80);
+  --secondary-foreground: oklch(0.22 0.008 70);
 
-  --muted: oklch(0.298 0.034 215);
-  --muted-foreground: oklch(0.72 0.02 220);
-  --accent: oklch(0.298 0.034 215);
-  --accent-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.928 0.010 80);
+  --muted-foreground: oklch(0.48 0.006 70);
+  --accent: oklch(0.928 0.010 80);
+  --accent-foreground: oklch(0.22 0.008 70);
 
-  --warn: oklch(0.79 0.16 75);            /* #f5a524 amber */
-  --warn-foreground: oklch(0.18 0.02 220);
-  --critical: oklch(0.55 0.22 18);        /* #be123c deep red */
+  --warn: oklch(0.74 0.16 60);             /* amber stamp */
+  --warn-foreground: oklch(0.18 0.005 60);
+  --critical: oklch(0.52 0.21 25);         /* red stamp */
   --critical-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.55 0.22 18);
+  --destructive: oklch(0.52 0.21 25);
   --destructive-foreground: oklch(0.985 0 0);
 
-  --border: oklch(0.298 0.034 215);
-  --input: oklch(0.298 0.034 215);
-  --ring: oklch(0.76 0.08 195);
-}
-
-.dark {
-  --background: oklch(0.205 0.027 220);
-  --foreground: oklch(0.985 0 0);
+  --border: oklch(0.88 0.010 80);
+  --input: oklch(0.928 0.010 80);
+  --ring: oklch(0.18 0.005 60);
 }
 
 @layer base {
@@ -87,11 +85,13 @@
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
   }
+  ::selection { background: var(--color-ink); color: var(--color-background); }
 }
 
 @utility font-display {
-  font-family: var(--font-mono);
+  font-family: var(--font-display);
   letter-spacing: -0.02em;
 }
 
@@ -100,5 +100,13 @@
   100% { transform: translateX(-50%); }
 }
 @utility animate-ticker {
-  animation: ticker-scroll 45s linear infinite;
+  animation: ticker-scroll 55s linear infinite;
+}
+
+@keyframes flash-in {
+  0% { background-color: color-mix(in oklab, var(--color-warn) 35%, transparent); }
+  100% { background-color: transparent; }
+}
+@utility animate-flash {
+  animation: flash-in 4s ease-out;
 }
